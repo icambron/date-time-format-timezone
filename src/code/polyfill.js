@@ -60,7 +60,7 @@ export default function polyfill(globalSpace) {
                 throw new RangeError(`invalid time zone in DateTimeFormat():  ${timeZone}`);
             }
 
-            // Do a timeshift to UTC to avoid explosion due to unsupprted timezone.
+            // Do a timeshift to UTC to avoid explosion due to unsupported timezone.
             const tsOption = jsonClone(options);
             tsOption.timeZone = 'UTC';
             super(locale, tsOption);
@@ -144,6 +144,52 @@ export default function polyfill(globalSpace) {
             }
 
             return shiftedFormat;
+        }
+
+        formatToParts(date) {
+            if (!this._dateTimeFormatPolyfill) {
+                return super.formatToParts(date);
+            }
+
+            if (date === null || date === undefined) {
+                date = new Date();
+            }
+
+            if (!(date instanceof Date)) {
+                date = new Date(date);
+            }
+
+            const polyfill = this._dateTimeFormatPolyfill;
+            const timeZoneOffsetInfo = getTimeZoneOffsetInfo(polyfill.timeZoneData, date);
+            const timeZoneOffset = timeZoneOffsetInfo.offset * 60000;
+            const shiftedDate = new Date(date.getTime() + timeZoneOffset); // We need to  format time by offseting it
+            const shiftedParts = super.formatToParts(shiftedDate);
+            const resolvedLocale = super.resolvedOptions().locale;
+            const doNeedToReplaceTimeZoneName = (polyfill.optionTimeZoneName !== undefined);
+
+            if (doNeedToReplaceTimeZoneName) {
+                const isShort = (polyfill.optionTimeZoneName === 'short');
+                const timeZoneName = getZoneNameForLocale({
+                    locale: resolvedLocale,
+                    ianaTimeZone: polyfill.optionTimeZone,
+                    isdst: timeZoneOffsetInfo.isdst,
+                    offset: timeZoneOffsetInfo.offset,
+                    timeStamp: date.getTime(),
+                    isShort: isShort
+                });
+
+                //all envs that have formatToParts also have findIndex
+                const index = shiftedParts.findIndex(part => part.type === 'timeZoneName');
+
+                if (index >= 0) {
+                    shiftedParts[index] = {
+                        type: 'timeZoneName',
+                        value: timeZoneName
+                    };
+                }
+            }
+
+            return shiftedParts;
         }
 
         resolvedOptions() {
